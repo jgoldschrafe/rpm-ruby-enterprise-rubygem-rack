@@ -1,0 +1,128 @@
+# Generated from <%= File::basename(format.gem_path) %> by gem2rpm -*- rpm-spec -*-
+%define ruby_sitelib %(ruby -rrbconfig -e "puts Config::CONFIG['sitelibdir']")
+%define gemdir %(ruby -rubygems -e 'puts Gem::dir' 2>/dev/null)
+%define gemname <%= spec.name %>
+%define geminstdir %{gemdir}/gems/%{gemname}-%{version}
+
+Summary: <%= spec.summary.gsub(/\.$/, "") %>
+Name: ruby-enterprise-rubygem-%{gemname}
+Version: <%= spec.version %>
+Release: 1%{?dist}
+Packager: <%= packager %>
+<% if spec.authors %>
+Vendor: <%= spec.authors.join(', ') %> <<%= spec.email.kind_of?(Array) ? spec.email.join('>, <') : spec.email %>>
+<% elsif spec.author %>
+Vendor: <%= spec.author %> <<%= spec.email %>>
+<% elsif spec.email %>
+Vendor: <%= spec.email %>
+<% end %>
+Group: Development/Languages
+License: GPLv2+ or Ruby
+<% if spec.homepage != "" %>
+URL: <%= spec.homepage %>
+<% end %>
+Source0: <%= download_path %>%{gemname}-%{version}.gem
+Source1: %{name}.spec.template
+BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
+Requires: ruby-enterprise-rubygems
+<% for d in spec.dependencies.select {|i| i.type == :runtime } %>
+<% if d.requirement.requirements[0][0] == "~>" %>
+<% top_version_segments = d.requirement.requirements[0][1].segments %>
+<% top_version_segments[-1] = 0 %>
+<% top_version_segments[-2] += 1 %>
+Requires: ruby-enterprise-rubygem(<%= d.name %>) => <%= d.requirement.requirements[0][1].version %>
+Requires: ruby-enterprise-rubygem(<%= d.name %>) < <%= top_version_segments.join('.') %>
+<% else %>
+Requires: ruby-enterprise-rubygem(<%= d.name %>) <%= d.requirement.requirements[0][0] %> <%= d.requirement.requirements[0][1].version %>
+<% end %>
+<% end %>
+BuildRequires: ruby-enterprise-rubygems
+<% if spec.extensions.empty? %>
+BuildArch: noarch
+<% end %>
+Provides: ruby-enterprise-rubygem(%{gemname}) = %{version}
+
+%description
+<%= spec.description.to_s.chomp.word_wrap(78) + "\n" %>
+
+<% if nongem %>
+%package -n ruby-enterprise-%{gemname}
+Summary: <%= spec.summary.gsub(/\.$/, "") %>
+Group: Development/Languages
+Requires: ruby-enterprise-rubygem(%{gemname}) = %{version}
+<% spec.files.select{ |f| spec.require_paths.include?(File::dirname(f)) }.reject { |f| f =~ /\.rb$/ }.collect { |f| File::basename(f) }.each do |p| %>
+Provides: ruby(<%= p %>) = %{version}
+<% end %>
+%description -n ruby-enterprise-%{gemname}
+<%= spec.description.to_s.chomp.word_wrap(78) + "\n" %>
+<% end # if nongem %>
+
+%prep
+
+%build
+
+%install
+rm -rf %{buildroot}
+mkdir -p %{buildroot}%{gemdir}
+<% rdoc_opt = spec.has_rdoc ? "--rdoc " : "" %>
+export GEM_HOME=%{buildroot}%{gemdir}
+export GEM_PATH=%{buildroot}%{gemdir}:`gem env gempath`
+gem install --local --force <%= rdoc_opt %>%{SOURCE0}
+<% unless spec.executables.empty? %>
+mkdir -p %{buildroot}/%{_bindir}
+mv %{buildroot}%{gemdir}/bin/* %{buildroot}/%{_bindir}
+rmdir %{buildroot}%{gemdir}/bin
+find %{buildroot}%{geminstdir}/bin -type f | xargs chmod a+x
+<% end %>
+<% if nongem %>
+mkdir -p %{buildroot}%{ruby_sitelib}
+<% spec.files.select{ |f| spec.require_paths.include?(File::dirname(f)) }.each do |p| %>
+ln -s %{gemdir}/gems/%{gemname}-%{version}/<%= p %> %{buildroot}%{ruby_sitelib}
+<% end %>
+<% end # if nongem %>
+
+%clean
+rm -rf %{buildroot}
+
+%files
+%defattr(-, root, root, -)
+<% for f in spec.executables %>
+%{_bindir}/<%= f %>
+<% end %>
+%{gemdir}/gems/%{gemname}-%{version}/
+<% if spec.has_rdoc %>
+%doc %{gemdir}/doc/%{gemname}-%{version}
+<% end %>
+<% for f in spec.extra_rdoc_files %>
+%doc %{geminstdir}/<%= f %>
+<% end %>
+%{gemdir}/cache/%{gemname}-%{version}.gem
+%{gemdir}/specifications/%{gemname}-%{version}.gemspec
+
+<% if nongem %>
+%files -n ruby-enterprise-%{gemname}
+%defattr(-, root, root, -)
+%{ruby_sitelib}/*
+<% end # if nongem %>
+
+%pre
+# Do not install this RPM if the gem is already installed another way.
+# Check for .gemspec file that exists and is not provided by an RPM.
+if ([ -e "%{gemdir}/specifications/%{gemname}-%{version}.gemspec" ] && !(rpm -q --whatprovides "%{gemdir}/specifications/%{gemname}-%{version}.gemspec" >/dev/null)); then
+    exit 1
+else
+    exit 0
+fi
+
+<% for f in spec.executables %>
+# Do not install if %{_bindir}/<%= f %> exists and is not provided by an RPM.
+if ([ -e "%{_bindir}/<%= f %>" ] && !(rpm -q --whatprovides "%{_bindir}/<%= f %>" >/dev/null)); then
+    exit 1
+else
+    exit 0
+fi
+
+<% end %>
+%changelog
+* <%= Time.now.strftime("%a %b %d %Y") %> <%= packager %> - <%= spec.version %>-1
+- Initial package
